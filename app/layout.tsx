@@ -1,5 +1,5 @@
-import React from "react";
-import { SessionProvider } from "next-auth/react";
+import "./globals.css";
+import { Providers } from "./providers"; // Подключаем наш клиентский провайдер
 
 export const metadata = {
   title: "VibeRoom",
@@ -8,31 +8,14 @@ export const metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="ru">
-      <head>
-        {/* Базовые стили добавлены напрямую для предотвращения ошибки импорта globals.css */}
-        <style>{`
-          @tailwind base;
-          @tailwind components;
-          @tailwind utilities;
-          
-          body {
-            background-color: black;
-            color: white;
-            margin: 0;
-            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-          }
-        `}</style>
-      </head>
       <body>
-        {/* Встроенный провайдер сессий (заменяет внешний файл providers.tsx) */}
-        <SessionProvider>
-          {children}
-        </SessionProvider>
+        {/* Оборачиваем сайт в Providers, который теперь работает правильно */}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
