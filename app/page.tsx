@@ -1,309 +1,268 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { 
-  Menu, X, Tv, Flame, Baby, MonitorPlay, 
-  Video, Upload, LogIn, User, Heart, ShieldAlert 
-} from 'lucide-react';
 
-// --- БАЗА ДАННЫХ КАТЕГОРИЙ ---
-const CATEGORIES = [
-  { id: 'popular', name: 'ПОПУЛЯРНОЕ', icon: Flame, desc: '> 5000 зрителей' },
-  { id: 'new', name: 'ФРЕШМЕНЫ', icon: Tv, desc: 'Стримят > 3 мес' },
-  { id: 'zoomers', name: 'ЗУМЕРЫ', icon: Baby, desc: 'W/L Комьюнити' },
-  { id: 'olds', name: 'ОЛДЫ', icon: MonitorPlay, desc: 'Ностальгия' },
-];
+import React, { useState } from 'react';
+import { Menu, X, Flame, Tv, Zap, Ghost, User, Upload, Search, Heart, Sparkles, LogOut } from 'lucide-react';
+import { signIn, signOut, useSession } from 'next-auth/react'; // Импортируем магию авторизации
 
-// --- ИМИТАЦИЯ ДАННЫХ ИЗ НАШЕГО БЭКЕНДА (с реальными никами Twitch) ---
+// Тестовые данные (пока нет базы данных)
 const MOCK_STREAMS = [
-  { id: 1, name: 'KaiCenat', category: 'zoomers', title: 'AMP HOUSE WILDIN' },
-  { id: 2, name: 'xQc', category: 'popular', title: 'REACTS & GAMING' },
-  { id: 3, name: 'Lirik', category: 'olds', title: 'CHILL SUNDAY SUB DAY' },
-  { id: 4, name: 'Summit1g', category: 'olds', title: 'GRINDING TARKOV' },
-  { id: 5, name: 'Jynxzi', category: 'zoomers', title: 'R6 TOURNAMENT' },
-  { id: 6, name: 'shroud', category: 'olds', title: 'CLICKING HEADS' },
-  { id: 7, name: 'Ibai', category: 'popular', title: 'LA VELADA PREP' },
-  { id: 8, name: 'hasanabi', category: 'popular', title: 'NEWS & CHILL' },
+  { id: 1, name: "KaiCenat", title: "AMP HOUSE WILDIN", viewers: "112K", category: "zoomers", isLive: true, tags: ["IRL", "Just Chatting"] },
+  { id: 2, name: "xQc", title: "REACTS & GAMING", viewers: "65K", category: "popular", isLive: true, tags: ["Variety", "Juice"] },
+  { id: 3, name: "Lirik", title: "CHILL SUNDAY SUB GAMES", viewers: "28K", category: "olds", isLive: true, tags: ["Gaming", "Chill"] },
+  { id: 4, name: "summit1g", title: "GRINDING TARKOV", viewers: "32K", category: "olds", isLive: true, tags: ["FPS", "Hardcore"] },
+  { id: 5, name: "Jynxzi", title: "R6 TOURNAMENT", viewers: "85K", category: "zoomers", isLive: true, tags: ["R6", "Console"] },
+  { id: 6, name: "shroud", title: "CLICKING HEADS", viewers: "22K", category: "olds", isLive: true, tags: ["Aim", "Valorant"] },
+  { id: 7, name: "Pluto", title: "NEW VTUBER DEBUT", viewers: "1.2K", category: "new", isLive: true, tags: ["VTuber", "Art"] },
+  { id: 8, name: "AlexR", title: "CODING VIBEROOM", viewers: "345", category: "new", isLive: true, tags: ["Dev", "Music"] },
 ];
 
-// Фильтр запрещенных слов (Safety System)
-const BANWORDS = ['hate', 'slur', 'banned_word_1', 'illegal'];
-
-const MOCK_SHORTS = [
-  { id: 101, author: 'xQc', title: 'CRAZY JUMP SCARE', likes: '1.2M', safe: true },
-  { id: 102, author: 'Jynxzi', title: '1v5 CLUTCH', likes: '800K', safe: true },
-  { id: 103, author: 'TrollUser', title: 'I hate everyone slur', likes: '10', safe: false }, // Отфильтруется
-  { id: 104, author: 'KaiCenat', title: 'AMP SETUP TOUR', likes: '2.5M', safe: true },
+const CATEGORIES = [
+  { id: 'all', name: 'ВСЕ СТРИМЫ', icon: Tv, color: 'text-green-400' },
+  { id: 'popular', name: 'ПОПУЛЯРНОЕ', desc: '> 5000 зрителей', icon: Flame, color: 'text-white' },
+  { id: 'new', name: 'ФРЕШМЕНЫ', desc: 'Стримят < 3 мес', icon: Zap, color: 'text-white' },
+  { id: 'zoomers', name: 'ЗУМЕРЫ', desc: 'W/L Комьюнити', icon: Ghost, color: 'text-white' },
+  { id: 'olds', name: 'ОЛДЫ', desc: 'Ностальгия', icon: Tv, color: 'text-white' },
 ];
 
-export default function VibeRoomApp() {
-  // --- СОСТОЯНИЯ ---
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
+export default function VibeRoom() {
+  const { data: session } = useSession(); // Получаем данные пользователя из Twitch
   const [activeCategory, setActiveCategory] = useState('all');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  
-  // Состояние для безопасного определения домена для плеера Twitch
-  const [hostname, setHostname] = useState('localhost');
+  const [isLeftMenuOpen, setIsLeftMenuOpen] = useState(true);
+  const [isShortsOpen, setIsShortsOpen] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    // Получаем текущий домен сайта после загрузки (защита от ошибок SSR)
-    if (typeof window !== 'undefined') {
-      setHostname(window.location.hostname);
-    }
-  }, []);
-  
-  // Система рекомендаций: Фильтрация стримов
-  const displayedStreams = activeCategory === 'all' 
-    ? MOCK_STREAMS 
-    : MOCK_STREAMS.filter(s => s.category === activeCategory);
-
-  // Автоматический модератор (фильтр тиктоков)
-  const safeShorts = MOCK_SHORTS.filter(short => {
-    const textToCheck = short.title.toLowerCase();
-    return !BANWORDS.some(word => textToCheck.includes(word));
+  // Логика фильтрации
+  const filteredStreams = MOCK_STREAMS.filter(stream => {
+    const matchesCategory = activeCategory === 'all' || stream.category === activeCategory;
+    const matchesSearch = stream.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      stream.title.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesSearch;
   });
 
   return (
-    <div className="flex h-screen bg-[#f4f4f4] text-black font-sans overflow-hidden selection:bg-[#adff2f] selection:text-black">
-      {/* Подключение пиксельного шрифта и стилей */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-        .pixel-font { font-family: 'Press Start 2P', cursive; }
-        .glass-bag {
-          background: rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(10px);
-          border: 2px solid rgba(0, 0, 0, 0.8);
-          box-shadow: 10px 10px 0px rgba(0, 0, 0, 0.2), inset 0 0 20px rgba(255,255,255,0.5);
-        }
-        ::-webkit-scrollbar { width: 0px; background: transparent; }
-      `}} />
+    <div className="h-screen bg-black text-white flex flex-col font-mono">
+      {/* HEADER (NAVBAR) */}
+      <header className="h-16 border-b-2 border-white/10 flex items-center justify-between px-4 shrink-0 bg-black z-50">
+        <div className="flex items-center gap-4">
+          <button onClick={() => setIsLeftMenuOpen(!isLeftMenuOpen)} className="p-2 hover:bg-white/10 rounded-sm transition-colors">
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="font-black text-2xl tracking-tighter leading-none flex items-center">
+            <span className="text-white">VIBE</span>
+            <span className="text-green-400">ROOM</span>
+          </div>
+        </div>
 
-      {/* ================= ЛЕВАЯ ПАНЕЛЬ (ПРОФИЛЬ & НАВИГАЦИЯ) ================= */}
-      <aside 
-        className={`bg-white border-r-4 border-black flex flex-col transition-all duration-300 z-20 ${leftOpen ? 'w-72' : 'w-20'}`}
-      >
-        <div className="p-4 border-b-4 border-black flex items-center justify-between bg-black text-white h-20">
-          {leftOpen && (
-            <h1 className="pixel-font text-xl text-[#adff2f] tracking-tighter">VIBE<br/>ROOM</h1>
-          )}
-          <button onClick={() => setLeftOpen(!leftOpen)} className="p-2 hover:bg-[#adff2f] hover:text-black transition-colors rounded">
-            <Menu size={24} />
+        <div className="flex-1 max-w-xl mx-8 relative hidden md:block">
+          <input 
+            type="text" 
+            placeholder="ПОИСК ВАЙБА..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white/5 border border-white/20 px-4 py-2 pl-10 rounded-none focus:outline-none focus:border-green-400 focus:bg-white/10 transition-all font-sans"
+          />
+          <Search className="w-4 h-4 absolute left-3 top-3 text-white/50" />
+        </div>
+
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setIsShortsOpen(!isShortsOpen)}
+            className={`px-4 py-2 border-2 text-sm font-bold transition-all ${isShortsOpen ? 'bg-green-400 text-black border-green-400' : 'bg-transparent text-white border-white/20 hover:border-white'}`}
+          >
+            SHORTS
           </button>
         </div>
+      </header>
 
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
-          {/* Авторизация / Профиль */}
-          <div className="flex flex-col gap-2">
-            {!isLoggedIn ? (
-              <button 
-                onClick={() => setIsLoggedIn(true)}
-                className={`flex items-center justify-center gap-2 bg-[#9146FF] text-white p-3 border-2 border-black hover:bg-[#adff2f] hover:text-black font-bold uppercase transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${!leftOpen && 'p-2'}`}
-              >
-                <LogIn size={20} />
-                {leftOpen && "Войти через Twitch"}
-              </button>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-3 bg-gray-100 p-2 border-2 border-black">
-                  <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center text-[#adff2f]">
-                    <User size={20} />
+      <div className="flex flex-1 overflow-hidden">
+        {/* LEFT SIDEBAR (НАВИГАЦИЯ & АВТОРИЗАЦИЯ) */}
+        {isLeftMenuOpen && (
+          <aside className="w-64 border-r-2 border-white/10 flex flex-col bg-black/95 z-40 overflow-y-auto shrink-0">
+            {/* Блок авторизации */}
+            <div className="p-4 border-b-2 border-white/10">
+              {session ? (
+                // Если пользователь вошел
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <img 
+                      src={session.user?.image || "https://api.dicebear.com/7.x/pixel-art/svg"} 
+                      alt="Avatar" 
+                      className="w-10 h-10 border-2 border-green-400"
+                    />
+                    <div className="overflow-hidden">
+                      <p className="font-bold truncate text-green-400">{session.user?.name}</p>
+                      <p className="text-xs text-white/50">В здании</p>
+                    </div>
                   </div>
-                  {leftOpen && <span className="font-bold pixel-font text-xs uppercase">Ты в Здании</span>}
-                </div>
-                {leftOpen && (
-                  <button className="flex items-center justify-center gap-2 bg-black text-white p-2 border-2 border-black hover:bg-[#adff2f] hover:text-black font-bold uppercase transition-all">
-                    <Upload size={18} /> Залить Shorts
+                  <button 
+                    onClick={() => signOut()}
+                    className="w-full flex items-center justify-center gap-2 p-2 border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs font-bold transition-colors"
+                  >
+                    <LogOut className="w-3 h-3" /> ВЫЙТИ
                   </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          <hr className="border-t-2 border-black border-dashed" />
-
-          {/* Категории */}
-          <div className="flex flex-col gap-2">
-            {leftOpen && <h3 className="font-bold uppercase text-xs tracking-widest text-gray-500 mb-2">Категории</h3>}
-            
-            <button 
-              onClick={() => setActiveCategory('all')}
-              className={`flex items-center gap-3 p-3 border-2 border-black font-bold uppercase transition-all ${activeCategory === 'all' ? 'bg-[#adff2f] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] translate-x-[-2px] translate-y-[-2px]' : 'bg-white hover:bg-gray-100'} ${!leftOpen && 'justify-center'}`}
-            >
-              <Video size={20} />
-              {leftOpen && "ВСЕ СТРИМЫ"}
-            </button>
-
-            {CATEGORIES.map(cat => (
-              <button 
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`flex items-center gap-3 p-3 border-2 border-black font-bold uppercase transition-all ${activeCategory === cat.id ? 'bg-[#adff2f] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] translate-x-[-2px] translate-y-[-2px]' : 'bg-white hover:bg-gray-100'} ${!leftOpen && 'justify-center'}`}
-                title={cat.desc}
-              >
-                <cat.icon size={20} />
-                {leftOpen && (
-                  <div className="flex flex-col items-start">
-                    <span>{cat.name}</span>
-                    <span className="text-[10px] text-gray-600 normal-case font-normal">{cat.desc}</span>
+                  <button className="w-full flex items-center justify-center gap-2 p-3 bg-white text-black font-bold hover:bg-green-400 transition-colors mt-2">
+                    <Upload className="w-4 h-4" /> ЗАЛИТЬ SHORTS
+                  </button>
+                </div>
+              ) : (
+                // Если пользователь НЕ вошел
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={() => signIn('twitch')}
+                    className="w-full flex items-center gap-3 p-3 border-2 border-green-400 hover:bg-green-400 hover:text-black transition-colors group"
+                  >
+                    <User className="w-5 h-5 text-green-400 group-hover:text-black" />
+                    <span className="font-bold">ВОЙТИ ЧЕРЕЗ TWITCH</span>
+                  </button>
+                  <div className="p-3 border border-white/10 bg-white/5 text-xs text-center text-white/70">
+                    <span className="text-green-400 font-bold">PROMO:</span> Первые 30 дней в топе ленты бесплатно после авторизации!
                   </div>
-                )}
-              </button>
-            ))}
-          </div>
+                </div>
+              )}
+            </div>
 
-          {/* Подписки из Twitch */}
-          {isLoggedIn && leftOpen && (
-            <>
-              <hr className="border-t-2 border-black border-dashed" />
+            {/* Меню категорий */}
+            <div className="p-4 flex-1">
+              <p className="text-xs text-white/30 font-bold mb-4 tracking-widest">КАТЕГОРИИ</p>
               <div className="flex flex-col gap-2">
-                <h3 className="font-bold uppercase text-xs tracking-widest flex items-center gap-2"><Heart size={14} className="text-red-500"/> Отслеживаемые</h3>
-                {['KaiCenat', 'Lirik', 'xQc'].map(sub => (
-                  <div key={sub} className="flex items-center justify-between p-2 hover:bg-gray-200 cursor-pointer border-2 border-transparent hover:border-black transition-all">
-                    <span className="font-bold text-sm">{sub}</span>
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                  </div>
-                ))}
+                {CATEGORIES.map(cat => {
+                  const Icon = cat.icon;
+                  return (
+                    <button 
+                      key={cat.id}
+                      onClick={() => setActiveCategory(cat.id)}
+                      className={`flex items-center gap-3 p-3 transition-all border-l-4 ${activeCategory === cat.id ? 'border-green-400 bg-white/5' : 'border-transparent hover:bg-white/5 hover:border-white/20'}`}
+                    >
+                      <Icon className={`w-5 h-5 ${cat.color}`} />
+                      <div className="text-left flex-1">
+                        <p className="font-bold text-sm">{cat.name}</p>
+                        {cat.desc && <p className="text-xs text-white/40">{cat.desc}</p>}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            </>
-          )}
-        </div>
-      </aside>
+            </div>
 
-      {/* ================= ЦЕНТРАЛЬНАЯ ПАНЕЛЬ (СТРИМЫ TWITCH) ================= */}
-      <main className="flex-1 overflow-y-auto relative bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-white">
-        {/* Фоновый декор */}
-        <div className="absolute top-10 left-10 opacity-10 pointer-events-none z-0">
-           <h1 className="pixel-font text-[120px] leading-none whitespace-nowrap overflow-hidden">
-              DESIGN<br/>WRAP
-           </h1>
-        </div>
+            {/* ПЛАШКА СОЗДАТЕЛЯ (TaFeedRoom) */}
+            <div className="mt-auto border-t-2 border-white/10 p-4 bg-gradient-to-t from-green-900/20 to-transparent">
+              <p className="text-[10px] text-white/50 font-bold mb-2 tracking-widest text-center">СДЕЛАНО С 💜</p>
+              <a 
+                href="https://twitch.tv/tafeedroom" 
+                target="_blank" 
+                rel="noreferrer"
+                className="flex items-center gap-3 p-3 border-2 border-green-400/50 hover:border-green-400 bg-black transition-all group"
+              >
+                <div className="w-8 h-8 bg-green-400 rounded-full flex items-center justify-center text-black font-black">
+                  TF
+                </div>
+                <div>
+                  <p className="font-bold text-sm group-hover:text-green-400 transition-colors">TaFeedRoom</p>
+                  <p className="text-[10px] text-white/60">Создатель VibeRoom</p>
+                </div>
+              </a>
+            </div>
+          </aside>
+        )}
 
-        <div className="p-10 relative z-10 max-w-7xl mx-auto min-h-full">
+        {/* MAIN FEED */}
+        <main className="flex-1 overflow-y-auto bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] relative">
+          <div className="absolute inset-0 bg-black/80 pointer-events-none"></div>
           
-          <header className="mb-12 flex justify-between items-end border-b-8 border-black pb-4">
-            <div>
-              <h2 className="pixel-font text-4xl uppercase mb-2">
-                {activeCategory === 'all' ? 'В эфире' : CATEGORIES.find(c => c.id === activeCategory)?.name}
-              </h2>
-              <p className="text-xl font-medium max-w-lg">
+          <div className="relative z-10 p-8 max-w-7xl mx-auto">
+            <div className="mb-12">
+              <h1 className="text-5xl font-black tracking-tighter mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white to-white/50 uppercase">
+                {CATEGORIES.find(c => c.id === activeCategory)?.name || 'В ЭФИРЕ'}
+              </h1>
+              <p className="text-white/60 font-sans max-w-lg">
                 Как создать незабываемый опыт. Выбери свою вибрацию на сегодня.
               </p>
             </div>
-            <div className="pixel-font text-[#adff2f] bg-black px-4 py-2 text-sm shadow-[4px_4px_0px_0px_rgba(173,255,47,1)]">
-              [ LIVE_NOW ]
-            </div>
-          </header>
 
-          {/* Сетка стримов */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-8">
-            {displayedStreams.map(stream => (
-              <div key={stream.id} className="group relative bg-white border-4 border-black p-2 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-[12px_12px_0px_0px_rgba(173,255,47,1)] hover:-translate-y-1 transition-all flex flex-col">
-                
-                {/* НАСТОЯЩИЙ ПЛЕЕР TWITCH */}
-                <div className="w-full aspect-video border-2 border-black mb-3 relative overflow-hidden bg-black group-hover:border-[#adff2f] transition-colors">
-                  
-                  {/* Загружаем iframe только если у нас есть корректный hostname */}
-                  {hostname && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredStreams.map(stream => (
+                <div key={stream.id} className="group relative bg-black border-2 border-white/10 hover:border-green-400 transition-colors aspect-video flex flex-col cursor-pointer">
+                  {/* Контейнер для плеера */}
+                  <div className="flex-1 relative bg-zinc-900 overflow-hidden">
+                    {/* Если мы на локалке (localhost) или на vercel, iframe подхватит домен */}
                     <iframe
-                      src={`https://player.twitch.tv/?channel=${stream.name.toLowerCase()}&parent=${hostname}&muted=true`}
+                      src={`https://player.twitch.tv/?channel=${stream.name}&parent=${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}&muted=true`}
                       height="100%"
                       width="100%"
                       allowFullScreen
-                      className="absolute inset-0 z-0"
+                      className="absolute inset-0 pointer-events-none" // Блокируем клики по плееру, чтобы клик шел на наш блок
                     ></iframe>
-                  )}
-                  
-                  {/* Красивый бейдж LIVE поверх плеера (не кликабельный) */}
-                  <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] pixel-font px-2 py-1 flex items-center gap-2 z-10 pointer-events-none">
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                    LIVE
+                    
+                    <div className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 flex items-center gap-2">
+                      <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                      LIVE
+                    </div>
+                    <div className="absolute bottom-2 left-2 bg-black/80 backdrop-blur text-white text-xs font-bold px-2 py-1">
+                      {stream.viewers}
+                    </div>
                   </div>
-                </div>
-
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-bold text-lg leading-tight uppercase truncate max-w-[200px]" title={stream.title}>{stream.title}</h3>
-                    <p className="text-sm text-gray-600 font-bold">{stream.name}</p>
-                  </div>
-                  <span className="text-[10px] border border-black px-1 uppercase font-bold text-gray-500">{stream.category}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {displayedStreams.length === 0 && (
-            <div className="text-center py-20 pixel-font text-gray-400">
-              Никто не стримит в этой категории...
-            </div>
-          )}
-
-        </div>
-      </main>
-
-      {/* ================= ПРАВАЯ ПАНЕЛЬ (SHORTS / ЛЕНТА) ================= */}
-      <aside 
-        className={`bg-black border-l-4 border-black flex flex-col transition-all duration-300 z-20 relative ${rightOpen ? 'w-80' : 'w-20'}`}
-      >
-        <button 
-          onClick={() => setRightOpen(!rightOpen)} 
-          className="absolute -left-12 top-4 bg-[#adff2f] p-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all z-30"
-        >
-          {rightOpen ? <X size={24} className="text-black"/> : <Tv size={24} className="text-black"/>}
-        </button>
-
-        <div className="p-4 border-b-2 border-white/20 h-20 flex items-center justify-center">
-          {rightOpen ? (
-             <h2 className="pixel-font text-white text-lg tracking-widest text-center w-full">SHORTS<br/><span className="text-[#adff2f] text-[10px]">FEED</span></h2>
-          ) : (
-            <span className="text-white pixel-font text-xs rotate-90 whitespace-nowrap mt-10">SHORTS</span>
-          )}
-        </div>
-
-        {rightOpen && (
-          <div className="flex-1 overflow-y-auto snap-y snap-mandatory bg-[#111]">
-            {/* Рендерим безопасные видео */}
-            {safeShorts.map(short => (
-              <div key={short.id} className="w-full h-full snap-start snap-always relative border-b-4 border-black group">
-                
-                <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-black flex items-center justify-center">
-                   <div className="text-center">
-                      <Tv size={48} className="mx-auto text-white/20 mb-4 group-hover:scale-110 transition-transform" />
-                      <p className="pixel-font text-[10px] text-white/40">ВИДЕО ЗАГРУЖАЕТСЯ...</p>
-                   </div>
-                </div>
-
-                <div className="absolute inset-0 glass-bag opacity-30 pointer-events-none"></div>
-                
-                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 to-transparent z-10 flex justify-between items-end">
-                  <div className="w-3/4">
-                    <p className="text-[#adff2f] pixel-font text-[10px] mb-2">@{short.author}</p>
-                    <h3 className="text-white font-bold text-lg leading-tight uppercase">{short.title}</h3>
-                  </div>
-                  
-                  <div className="flex flex-col gap-4 items-center">
-                    <button className="flex flex-col items-center gap-1 group/btn">
-                      <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-md border border-white/20 group-hover/btn:bg-red-500 transition-colors">
-                         <Heart size={20} className="text-white" />
+                  {/* Информация под плеером */}
+                  <div className="p-3 border-t-2 border-white/10 bg-black">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-bold uppercase truncate max-w-[200px]">{stream.title}</h3>
+                        <p className="text-sm text-white/60">{stream.name}</p>
                       </div>
-                      <span className="text-white text-xs font-bold">{short.likes}</span>
+                      <div className="px-2 py-1 bg-white/10 text-[10px] uppercase font-bold text-white/50">
+                        {stream.category}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Hover-эффект */}
+                  <div className="absolute inset-0 border-4 border-green-400 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity"></div>
+                </div>
+              ))}
+            </div>
+            
+            {filteredStreams.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-64 text-white/30 border-2 border-dashed border-white/10">
+                <Ghost className="w-12 h-12 mb-4" />
+                <p>В этой категории сейчас пусто. Будь первым!</p>
+              </div>
+            )}
+          </div>
+        </main>
+
+        {/* RIGHT SIDEBAR (SHORTS FEED) */}
+        {isShortsOpen && (
+          <aside className="w-80 border-l-2 border-white/10 bg-black flex flex-col relative z-40 hidden lg:flex shrink-0">
+            <div className="p-4 border-b-2 border-white/10 flex justify-between items-center bg-black sticky top-0 z-10">
+              <div className="flex items-center gap-2 text-green-400 font-bold">
+                <Sparkles className="w-4 h-4" /> SHORTS FEED
+              </div>
+              <button onClick={() => setIsShortsOpen(false)} className="hover:text-red-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto overflow-x-hidden snap-y snap-mandatory bg-zinc-950">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-full w-full snap-start border-b border-white/5 relative bg-zinc-900 group flex items-center justify-center">
+                  <Tv className="w-12 h-12 text-white/10" />
+                  <p className="absolute bottom-1/2 text-white/20 text-xs tracking-widest">ВИДЕО ЗАГРУЖАЕТСЯ...</p>
+                  
+                  <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-black/90 to-transparent">
+                    <p className="text-green-400 font-bold text-xs mb-1">@xQc</p>
+                    <p className="text-sm font-bold truncate">CRAZY JUMP SCARE 😱</p>
+                  </div>
+
+                  <div className="absolute right-4 bottom-20 flex flex-col gap-4">
+                    <button className="p-3 bg-black/50 backdrop-blur rounded-full hover:bg-green-400 hover:text-black transition-colors">
+                      <Heart className="w-5 h-5" />
                     </button>
+                    <span className="text-xs font-bold text-center">1.2M</span>
                   </div>
                 </div>
-
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-0">
-                  <span className="pixel-font text-[#adff2f]/50 text-4xl">{"<scroll>"}</span>
-                </div>
-              </div>
-            ))}
-            
-             <div className="w-full h-full snap-start snap-always relative flex flex-col items-center justify-center bg-black p-8 text-center border-b-4 border-black">
-                <ShieldAlert size={48} className="text-[#adff2f] mb-4" />
-                <h3 className="pixel-font text-[#adff2f] text-sm mb-2">АЛГОРИТМ РАБОТАЕТ</h3>
-                <p className="text-white/60 text-sm">Весь неприемлемый контент (banwords) был отфильтрован нашей системой.</p>
-             </div>
-          </div>
+              ))}
+            </div>
+          </aside>
         )}
-      </aside>
+      </div>
     </div>
   );
 }
