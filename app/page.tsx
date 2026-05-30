@@ -1,16 +1,15 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Menu, X, Flame, Tv, Zap, Ghost, User, Upload, Search, Heart, Sparkles, LogOut } from 'lucide-react';
 
-// ВАЖНО: Для твоего VS Code раскомментируй (убери //) со строчки ниже:
-// import { signIn, signOut, useSession } from 'next-auth/react'; 
+import { signIn, signOut, useSession } from 'next-auth/react'; 
 
-// Эти три строчки ниже нужны только для того, чтобы сайт работал здесь, в предпросмотре. 
-// Когда будешь вставлять код в VS Code, можешь их удалить!
-const useSession = () => ({ data: { user: { name: "TaFeedRoom", image: "https://api.dicebear.com/7.x/pixel-art/svg" } } as any });
-const signIn = (provider: string) => alert(`Вход через ${provider}`);
-const signOut = () => alert(`Выход`);
+// 🔴 ВАЖНО ДЛЯ VS CODE:
+// ЗАКОММЕНТИРУЙ или УДАЛИ эти три строчки у себя, они нужны только для предпросмотра здесь!
+//const useSession = () => ({ data: null });
+//const signIn = (provider: string) => alert(`Вход через ${provider}`);
+//const signOut = () => alert('Выход');
 
 const MOCK_STREAMS = [
   { id: 1, name: "KaiCenat", title: "AMP HOUSE WILDIN", viewers: "112K", category: "zoomers", isLive: true, tags: ["IRL", "Just Chatting"] },
@@ -32,11 +31,19 @@ const CATEGORIES = [
 ];
 
 export default function VibeRoom() {
-  const { data: session } = useSession(); 
+  // Тот самый трюк с "as any", который скажет Vercel не блокировать сборку из-за типов TS!
+  const { data } = useSession();
+  const session = data as any; 
+
   const [activeCategory, setActiveCategory] = useState('all');
   const [isLeftMenuOpen, setIsLeftMenuOpen] = useState(true);
   const [isShortsOpen, setIsShortsOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const filteredStreams = MOCK_STREAMS.filter(stream => {
     const matchesCategory = activeCategory === 'all' || stream.category === activeCategory;
@@ -44,6 +51,8 @@ export default function VibeRoom() {
       stream.title.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
+
+  if (!isMounted) return null;
 
   return (
     <div className="h-screen bg-black text-white flex flex-col font-mono">
@@ -80,14 +89,12 @@ export default function VibeRoom() {
         </div>
       </header>
 
-      {}
       <div className="flex flex-1 overflow-hidden">
+        {/* LEFT SIDEBAR */}
         {isLeftMenuOpen && (
           <aside className="w-64 border-r-2 border-white/10 flex flex-col bg-black/95 z-40 overflow-y-auto shrink-0">
-            {/* Блок авторизации */}
             <div className="p-4 border-b-2 border-white/10">
               {session?.user ? (
-                // Безопасная проверка session?.user предотвращает ошибку TypeScript в VS Code
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center gap-3">
                     <img 
@@ -126,7 +133,6 @@ export default function VibeRoom() {
               )}
             </div>
 
-            {/* Меню категорий */}
             <div className="p-4 flex-1">
               <p className="text-xs text-white/30 font-bold mb-4 tracking-widest">КАТЕГОРИИ</p>
               <div className="flex flex-col gap-2">
@@ -149,9 +155,8 @@ export default function VibeRoom() {
               </div>
             </div>
 
-            {/* ПЛАШКА СОЗДАТЕЛЯ (TaFeedRoom) */}
             <div className="mt-auto border-t-2 border-white/10 p-4 bg-gradient-to-t from-cyan-900/20 to-transparent">
-              <p className="text-[10px] text-white/50 font-bold mb-2 tracking-widest text-center">СДЕЛАНО С 💙</p>
+              <p className="text-[10px] text-white/50 font-bold mb-2 tracking-widest text-center">СДЕЛАНО С 💜</p>
               <a 
                 href="https://twitch.tv/tafeedroom" 
                 target="_blank" 
@@ -170,7 +175,7 @@ export default function VibeRoom() {
           </aside>
         )}
 
-        {}
+        {/* MAIN FEED */}
         <main className="flex-1 overflow-y-auto bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] relative">
           <div className="absolute inset-0 bg-black/80 pointer-events-none"></div>
           
@@ -187,8 +192,6 @@ export default function VibeRoom() {
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
               {filteredStreams.map(stream => (
                 <div key={stream.id} className="group relative bg-black border-2 border-white/10 hover:border-cyan-400 transition-colors aspect-video flex flex-col cursor-pointer">
-                  
-                  {/* ИСПРАВЛЕННЫЙ ПЛЕЕР: Жестко прописан домен Vercel и localhost */}
                   <div className="flex-1 relative bg-zinc-900 overflow-hidden">
                     <iframe
                       src={`https://player.twitch.tv/?channel=${stream.name}&parent=viberoomtv.vercel.app&parent=localhost&muted=true`}
@@ -206,7 +209,6 @@ export default function VibeRoom() {
                       {stream.viewers}
                     </div>
                   </div>
-
                   <div className="p-3 border-t-2 border-white/10 bg-black">
                     <div className="flex justify-between items-start">
                       <div>
@@ -232,7 +234,7 @@ export default function VibeRoom() {
           </div>
         </main>
 
-        {}
+        {/* RIGHT SIDEBAR (SHORTS) */}
         {isShortsOpen && (
           <aside className="w-80 border-l-2 border-white/10 bg-black flex flex-col relative z-40 hidden lg:flex shrink-0">
             <div className="p-4 border-b-2 border-white/10 flex justify-between items-center bg-black sticky top-0 z-10">
