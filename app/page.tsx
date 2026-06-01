@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Menu, Tv, Search, LogOut, Globe, Loader2, User } from 'lucide-react';
+import { Menu, Tv, Search, LogOut, Globe, Loader2, User, Play } from 'lucide-react';
 
 import { signIn, signOut, useSession } from 'next-auth/react'; 
+
 
 export default function VibeRoom() {
   const { data } = useSession();
@@ -20,15 +21,19 @@ export default function VibeRoom() {
   const [language, setLanguage] = useState<'ru' | 'en'>('ru');
   const [isLoading, setIsLoading] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
+  
+  // Состояние активного плеера (только один может играть одновременно)
+  const [activeStreamId, setActiveStreamId] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // МАГИЯ: Автоматическая загрузка реальных стримов с Twitch
+  // Загрузка стримов из нашего API
   useEffect(() => {
     const fetchRealStreams = async () => {
       setIsLoading(true);
+      setActiveStreamId(null); // Сбрасываем плеер при обновлении
       try {
         const res = await fetch(`/api/twitch?language=${language}`);
         if (!res.ok) throw new Error('API Server error');
@@ -38,9 +43,7 @@ export default function VibeRoom() {
         if (Array.isArray(data) && data.length > 0) {
           setStreams(data);
           
-          // Вытаскиваем уникальные названия игр/категорий (например: Dota 2, Just Chatting)
           const uniqueGames = Array.from(new Set(data.map(s => s.game_name))).filter(Boolean);
-          // Ставим "ВСЕ СТРИМЫ" первым, и добавляем топ-10 самых популярных игр прямо сейчас
           setCategories(['ВСЕ СТРИМЫ', ...uniqueGames.slice(0, 10)]);
           setActiveCategory('ВСЕ СТРИМЫ');
         } else {
@@ -53,9 +56,8 @@ export default function VibeRoom() {
     };
 
     fetchRealStreams();
-  }, [language]); // Перезагружаем при смене языка
+  }, [language]); 
 
-  // Умная фильтрация для интерфейса
   const filteredStreams = streams.filter(stream => {
     const matchesCategory = activeCategory === 'ВСЕ СТРИМЫ' || stream.game_name === activeCategory;
     const matchesSearch = stream.user_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -63,10 +65,14 @@ export default function VibeRoom() {
     return matchesCategory && matchesSearch;
   });
 
-  // Форматирование зрителей (например: 15400 -> 15.4K)
   const formatViewers = (count: number) => {
     if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
     return count.toString();
+  };
+
+  // Преобразуем URL миниатюры Twitch под нужный размер
+  const getThumbnailUrl = (url: string) => {
+    return url.replace('{width}', '640').replace('{height}', '360');
   };
 
   if (!isMounted) return null;
@@ -74,7 +80,7 @@ export default function VibeRoom() {
   return (
     <div className="h-screen bg-black text-white flex flex-col font-mono overflow-hidden">
       
-      {/* КРАСИВЫЙ СКРОЛЛБАР (Глобально для всего сайта) */}
+      {/* Кастомный скроллбар */}
       <style dangerouslySetInnerHTML={{__html: `
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #000; }
@@ -82,8 +88,8 @@ export default function VibeRoom() {
         ::-webkit-scrollbar-thumb:hover { background: #06b6d4; }
       `}} />
 
-      {/* HEADER (НАВИГАЦИЯ) */}
-      <header className="h-16 border-b-2 border-white/10 flex items-center justify-between px-4 shrink-0 bg-black z-50">
+      {/* HEADER */}
+      <header className="h-16 border-b border-white/10 flex items-center justify-between px-4 shrink-0 bg-black z-50">
         <div className="flex items-center gap-4">
           <button onClick={() => setIsLeftMenuOpen(!isLeftMenuOpen)} className="p-2 hover:bg-white/10 rounded-sm transition-colors">
             <Menu className="w-6 h-6 text-cyan-400" />
@@ -94,19 +100,17 @@ export default function VibeRoom() {
           </div>
         </div>
 
-        {/* Поиск */}
         <div className="flex-1 max-w-2xl mx-8 relative hidden md:block">
           <input 
             type="text" 
             placeholder="ПОИСК СТРИМЕРА ИЛИ ВАЙБА..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white/5 border border-white/20 px-4 py-2 pl-10 rounded-none focus:outline-none focus:border-cyan-400 focus:bg-white/10 transition-all font-sans text-white"
+            className="w-full bg-white/5 border border-white/20 px-4 py-2 pl-10 rounded-none focus:outline-none focus:border-cyan-400 focus:bg-white/10 transition-all font-sans text-white placeholder:text-white/30"
           />
           <Search className="w-4 h-4 absolute left-3 top-3 text-white/50" />
         </div>
 
-        {/* Переключатель языка (Подтягивает новые данные) */}
         <div className="flex items-center gap-2 bg-white/5 p-1 border border-white/10 rounded">
           <Globe className="w-4 h-4 text-white/50 ml-2" />
           <button 
@@ -127,17 +131,16 @@ export default function VibeRoom() {
       <div className="flex flex-1 overflow-hidden">
         {/* ЛЕВОЕ МЕНЮ */}
         {isLeftMenuOpen && (
-          <aside className="w-64 border-r-2 border-white/10 flex flex-col bg-black/95 z-40 overflow-y-auto shrink-0 custom-scrollbar">
+          <aside className="w-64 border-r border-white/10 flex flex-col bg-black/95 z-40 overflow-y-auto shrink-0 custom-scrollbar">
             
-            {/* Блок авторизации */}
-            <div className="p-4 border-b-2 border-white/10">
+            <div className="p-4 border-b border-white/10">
               {session?.user ? (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center gap-3 bg-white/5 p-2 border border-white/10">
                     <img 
                       src={session.user.image || "https://api.dicebear.com/7.x/pixel-art/svg"} 
                       alt="Avatar" 
-                      className="w-10 h-10 border-2 border-cyan-400"
+                      className="w-10 h-10 border border-cyan-400"
                     />
                     <div className="overflow-hidden">
                       <p className="font-bold truncate text-cyan-400 text-sm">{session.user.name}</p>
@@ -155,7 +158,7 @@ export default function VibeRoom() {
                 <div className="flex flex-col gap-3">
                   <button 
                     onClick={() => signIn('twitch')}
-                    className="w-full flex items-center gap-3 p-3 border-2 border-cyan-400 hover:bg-cyan-400 hover:text-black transition-colors group bg-cyan-400/5"
+                    className="w-full flex items-center justify-center gap-3 p-3 border border-cyan-400 hover:bg-cyan-400 hover:text-black transition-colors group bg-cyan-400/5"
                   >
                     <User className="w-5 h-5 text-cyan-400 group-hover:text-black" />
                     <span className="font-bold text-sm">ВОЙТИ (TWITCH)</span>
@@ -164,21 +167,17 @@ export default function VibeRoom() {
               )}
             </div>
 
-            {/* Блок: ОТСЛЕЖИВАЕМЫЕ (Подписки) */}
-            <div className="p-4 border-b-2 border-white/10">
+            <div className="p-4 border-b border-white/10">
               <p className="text-xs text-white/30 font-bold mb-3 tracking-widest">ОТСЛЕЖИВАЕМЫЕ</p>
               {session?.user ? (
-                <div className="flex flex-col gap-2">
-                  <p className="text-xs text-cyan-400/80 italic p-2 bg-cyan-400/10 border border-cyan-400/20 rounded">
-                    🛠 Интеграция подписок в разработке. Ожидайте в следующем патче!
-                  </p>
-                </div>
+                <p className="text-xs text-cyan-400/80 italic p-2 bg-cyan-400/10 border border-cyan-400/20 rounded">
+                  🛠 Интеграция подписок в разработке. Ожидайте в следующем патче!
+                </p>
               ) : (
                 <p className="text-xs text-white/40 italic">Войдите, чтобы видеть свои подписки.</p>
               )}
             </div>
 
-            {/* АВТОМАТИЧЕСКИЕ КАТЕГОРИИ ИЗ TWITCH */}
             <div className="p-4 flex-1">
               <p className="text-xs text-white/30 font-bold mb-3 tracking-widest">КАТЕГОРИИ В ЭФИРЕ</p>
               <div className="flex flex-col gap-1">
@@ -203,8 +202,7 @@ export default function VibeRoom() {
               </div>
             </div>
 
-            {/* ПЛАШКА СОЗДАТЕЛЯ (TaFeedRoom -> Telegram) */}
-            <div className="mt-auto border-t-2 border-white/10 p-4 bg-gradient-to-t from-cyan-900/20 to-transparent">
+            <div className="mt-auto border-t border-white/10 p-4 bg-gradient-to-t from-cyan-900/10 to-transparent">
               <p className="text-[10px] text-cyan-400 font-bold mb-2 tracking-widest text-center uppercase">Создатель платформы</p>
               <a 
                 href="https://t.me/tafeedrooms" 
@@ -225,68 +223,94 @@ export default function VibeRoom() {
         )}
 
         {/* ГЛАВНАЯ ЛЕНТА */}
-        <main className="flex-1 overflow-y-auto bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] relative custom-scrollbar">
-          <div className="absolute inset-0 bg-black/90 pointer-events-none"></div>
+        <main className="flex-1 overflow-y-auto bg-zinc-950 relative custom-scrollbar">
           
-          <div className="relative z-10 p-4 md:p-8 max-w-[1600px] mx-auto">
+          <div className="relative z-10 p-4 md:p-8 max-w-[1800px] mx-auto">
             
-            {/* Заголовок */}
             <div className="mb-8 border-l-4 border-cyan-400 pl-4 flex items-center justify-between">
               <div>
-                <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase text-white truncate max-w-xl">
+                <h1 className="text-3xl md:text-4xl font-black tracking-tighter uppercase text-white truncate max-w-xl">
                   {activeCategory}
                 </h1>
-                <p className="text-cyan-400/80 font-sans mt-2">
+                <p className="text-cyan-400/80 font-sans mt-2 text-sm">
                   {language === 'ru' ? 'В эфире прямо сейчас (RU)' : 'Live right now (Global)'}
                 </p>
               </div>
-              
               {isLoading && <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />}
             </div>
 
-            {/* Сетка стримов из Twitch */}
             {!isLoading && filteredStreams.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 md:gap-6">
-                {filteredStreams.map(stream => (
-                  <div key={stream.id} className="group relative bg-black border border-white/10 hover:border-cyan-400 transition-colors aspect-video flex flex-col cursor-pointer shadow-lg hover:shadow-cyan-500/20">
-                    
-                    {/* Плеер */}
-                    <div className="flex-1 relative bg-zinc-900 overflow-hidden">
-                      <iframe
-                        src={`https://player.twitch.tv/?channel=${stream.user_login}&parent=viberoomtv.vercel.app&parent=localhost&muted=true`}
-                        height="100%"
-                        width="100%"
-                        allowFullScreen
-                        className="absolute inset-0" 
-                      ></iframe>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+                {filteredStreams.map(stream => {
+                  const isPlaying = activeStreamId === stream.id;
+
+                  return (
+                    <div key={stream.id} className="group relative bg-black border border-white/10 hover:border-cyan-400 transition-colors flex flex-col shadow-lg overflow-hidden">
                       
-                      {/* Индикаторы поверх плеера (почти не мешают, но дают инфу) */}
-                      <div className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 flex items-center gap-1.5 shadow-md pointer-events-none">
-                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
-                        LIVE
-                      </div>
-                      <div className="absolute bottom-2 left-2 bg-black/80 backdrop-blur text-white text-xs font-bold px-2 py-1 border border-white/10 pointer-events-none">
-                        👁 {formatViewers(stream.viewer_count)}
-                      </div>
-                    </div>
-                    
-                    {/* Инфо под плеером */}
-                    <div className="p-3 border-t border-white/10 bg-zinc-950">
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="overflow-hidden">
-                          <h3 className="font-bold truncate text-sm text-white group-hover:text-cyan-400 transition-colors" title={stream.title}>
-                            {stream.title}
-                          </h3>
-                          <p className="text-xs text-white/50 mt-1">{stream.user_name} • {stream.game_name}</p>
+                      {/* КОНТЕЙНЕР ПЛЕЕРА / КАРТИНКИ */}
+                      <div 
+                        className="relative aspect-video bg-zinc-900 cursor-pointer overflow-hidden"
+                        onClick={() => setActiveStreamId(stream.id)}
+                      >
+                        {isPlaying ? (
+                          // Активный плеер (играет только один!)
+                          <iframe
+                            src={`https://player.twitch.tv/?channel=${stream.user_login}&parent=viberoomtv.vercel.app&parent=localhost&muted=false&autoplay=true`}
+                            height="100%"
+                            width="100%"
+                            allowFullScreen
+                            className="absolute inset-0" 
+                          ></iframe>
+                        ) : (
+                          // Картинка-превью (для тех, кто сейчас не играет)
+                          <>
+                            <img 
+                              src={getThumbnailUrl(stream.thumbnail_url)} 
+                              alt={stream.title}
+                              className="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+                            />
+                            {/* Затемнение и кнопка Play при наведении */}
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="bg-cyan-400/90 p-4 rounded-full text-black transform scale-90 group-hover:scale-100 transition-transform">
+                                <Play className="w-8 h-8 fill-black" />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        
+                        {/* Бейдж LIVE (показываем всегда) */}
+                        <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-2 py-1 flex items-center gap-1.5 shadow-md pointer-events-none rounded-sm">
+                          <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
+                          LIVE
+                        </div>
+                        {/* Бейдж зрителей */}
+                        <div className="absolute bottom-2 left-2 bg-black/80 backdrop-blur text-white text-[10px] font-bold px-2 py-1 border border-white/10 pointer-events-none rounded-sm">
+                          👁 {formatViewers(stream.viewer_count)}
                         </div>
                       </div>
+                      
+                      {/* ИНФО ПАНЕЛЬ (Строго под картинкой, не перекрывает стрим) */}
+                      <div className="p-4 bg-zinc-950/80 flex gap-3 h-[88px]">
+                        <img 
+                          src={`https://api.dicebear.com/7.x/initials/svg?seed=${stream.user_name}&backgroundColor=0891b2`} 
+                          alt="avatar" 
+                          className="w-10 h-10 rounded-full shrink-0"
+                        />
+                        <div className="overflow-hidden flex-1">
+                          <h3 className="font-bold truncate text-sm text-white group-hover:text-cyan-400 transition-colors leading-tight" title={stream.title}>
+                            {stream.title}
+                          </h3>
+                          <p className="text-xs text-white/50 mt-1 truncate">{stream.user_name}</p>
+                          <p className="text-xs text-cyan-400/70 truncate">{stream.game_name}</p>
+                        </div>
+                      </div>
+
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             
-            {/* Пустое состояние */}
             {!isLoading && filteredStreams.length === 0 && (
               <div className="flex flex-col items-center justify-center h-64 text-white/30 border-2 border-dashed border-white/10 mt-8">
                 <Search className="w-12 h-12 mb-4 opacity-50" />
